@@ -1,0 +1,39 @@
+name: Land Tracker
+on:
+  schedule:
+    # This tells GitHub to run the bot every 30 minutes
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # This adds a button so you can run it manually
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # This allows the bot to save data to your account
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+
+      - name: Run Tracker
+        env:
+          # This connects the "Secrets" you made to the code
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
+        run: python main.py
+
+      - name: Save Database
+        run: |
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add land.db || echo "No DB yet"
+          git commit -m "Update DB" || echo "No changes"
+          git push || echo "No push"
