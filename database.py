@@ -13,7 +13,6 @@ class LandDatabase:
                 CREATE TABLE IF NOT EXISTS listings (
                     hash TEXT PRIMARY KEY,
                     estate TEXT,
-                    suburb TEXT,
                     lot TEXT,
                     price REAL,
                     size TEXT,
@@ -31,14 +30,17 @@ class LandDatabase:
         return c.fetchone()
 
     def upsert(self, d):
-        h = hashlib.sha256(f"{d['estate']}{d['lot']}{d['stage']}".lower().encode()).hexdigest()
+        # Unique ID based on Estate, Lot, and Stage to prevent duplicates
+        raw_id = f"{d['estate']}{d['lot']}{d['stage']}".lower().strip()
+        h = hashlib.sha256(raw_id.encode()).hexdigest()
         now = datetime.now().isoformat()
         with self.conn:
             self.conn.execute("""
-                INSERT INTO listings (hash, estate, suburb, lot, price, size, frontage, stage, status, link, updated)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO listings (hash, estate, lot, price, size, frontage, stage, status, link, updated)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(hash) DO UPDATE SET 
-                price=excluded.price, status=excluded.status, updated=excluded.updated
-            """, (h, d['estate'], d.get('suburb',''), d['lot'], d['price'], d.get('size',''), 
-                  d.get('frontage',''), d.get('stage',''), d['status'], d['link'], now))
+                price=excluded.price, status=excluded.status, updated=excluded.updated,
+                size=excluded.size, frontage=excluded.frontage, stage=excluded.stage
+            """, (h, d['estate'], d['lot'], d['price'], d['size'], 
+                  d['frontage'], d['stage'], d['status'], d['link'], now))
         return h
