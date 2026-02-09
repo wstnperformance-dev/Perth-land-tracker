@@ -11,34 +11,34 @@ class LandDatabase:
         with self.conn:
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS listings (
-                    unique_hash TEXT PRIMARY KEY,
-                    estate_name TEXT,
+                    hash TEXT PRIMARY KEY,
+                    estate TEXT,
                     suburb TEXT,
-                    lot_number TEXT,
+                    lot TEXT,
                     price REAL,
+                    size TEXT,
+                    frontage TEXT,
+                    stage TEXT,
                     status TEXT,
                     link TEXT,
-                    last_seen DATETIME
+                    updated DATETIME
                 )
             """)
 
-    def generate_hash(self, estate, lot):
-        raw = f"{str(estate).lower()}|{str(lot).lower()}"
-        return hashlib.sha256(raw.encode()).hexdigest()
+    def get_listing(self, h):
+        c = self.conn.cursor()
+        c.execute("SELECT * FROM listings WHERE hash = ?", (h,))
+        return c.fetchone()
 
-    def get_listing(self, u_hash):
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM listings WHERE unique_hash = ?", (u_hash,))
-        return cursor.fetchone()
-
-    def upsert_listing(self, data):
-        u_hash = self.generate_hash(data['estate_name'], data['lot_number'])
+    def upsert(self, d):
+        h = hashlib.sha256(f"{d['estate']}{d['lot']}{d['stage']}".lower().encode()).hexdigest()
         now = datetime.now().isoformat()
         with self.conn:
             self.conn.execute("""
-                INSERT INTO listings (unique_hash, estate_name, suburb, lot_number, price, status, link, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(unique_hash) DO UPDATE SET 
-                price=excluded.price, status=excluded.status, last_seen=excluded.last_seen
-            """, (u_hash, data['estate_name'], data['suburb'], data['lot_number'], 
-                  data['price'], data['status'], data['link'], now))
+                INSERT INTO listings (hash, estate, suburb, lot, price, size, frontage, stage, status, link, updated)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(hash) DO UPDATE SET 
+                price=excluded.price, status=excluded.status, updated=excluded.updated
+            """, (h, d['estate'], d.get('suburb',''), d['lot'], d['price'], d.get('size',''), 
+                  d.get('frontage',''), d.get('stage',''), d['status'], d['link'], now))
+        return h
