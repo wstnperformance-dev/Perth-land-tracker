@@ -1,39 +1,57 @@
 import os
 import requests
 from database import LandDatabase
-from scraper import LandScraper
+from scraper import LandIntelligence
 
-def send_telegram(msg):
+def send_alert(msg):
     token = os.getenv('TELEGRAM_TOKEN')
     chat_id = os.getenv('TELEGRAM_CHAT')
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"})
+    requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
+                  json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"})
 
 def run():
     db = LandDatabase("land.db")
-    scraper = LandScraper()
+    bot = LandIntelligence()
     
-    # Add your target URLs here inside the brackets
-    urls = ["https://www.satterley.com.au/land-for-sale/perth"]
+    # ADD EVERY DEVELOPER PAGE HERE
+    # These are "hub" pages - the bot will scour everything inside them
+    target_urls = [
+        "https://www.openlot.com.au/perth-wa",
+        "https://www.satterley.com.au/land-for-sale/perth",
+        "https://www.peet.com.au/wa/land-for-sale",
+        "https://www.developmentwa.com.au/residential",
+        "https://www.cedarwoods.com.au/land-releases-perth-wa"
+    ]
     
-    for url in urls:
-        print(f"Checking {url}...")
-        items = scraper.scrape_satterley(url)
-        for item in items:
-            u_hash = db.generate_hash(item['estate_name'], item['lot_number'])
-            existing = db.get_listing(u_hash)
+    for url in target_urls:
+        print(f"Scouring: {url}")
+        blocks = bot.scour_page(url)
+        for b in blocks:
+            if b['status'] == "Sold": continue
+            
+            h = hashlib.sha256(f"{b['estate']}{b['lot']}{b['stage']}".lower().encode()).hexdigest()
+            existing = db.get_listing(h)
             
             if not existing:
-                db.upsert_listing(item)
-                if item['price'] > 0:
-                    msg = f"🚨 <b>NEW LAND FOUND!</b>\nEstate: {item['estate_name']}\nLot: {item['lot_number']}\nPrice: ${item['price']:,.0f}\n<a href='{item['link']}'>Link</a>"
-                    send_telegram(msg)
+                db.upsert(b)
+                msg = (f"🌟 <b>{b['status']}</b>\n"
+                       f"🏡 Estate: {b['estate']}\n"
+                       f"📍 Lot: {b['lot']} | {b['stage']}\n"
+                       f"📐 {b['size']} | {b['frontage']} wide\n"
+                       f"💰 Price: ${b['price']:,.0f}\n"
+                       f"🔗 <a href='{b['link']}'>Go to Site</a>")
+                send_alert(msg)
             else:
-                old_price = existing[4]
-                if item['price'] < old_price and item['price'] > 0:
-                    db.upsert_listing(item)
-                    msg = f"📉 <b>PRICE DROP!</b>\nLot: {item['lot_number']}\nWas: ${old_price:,.0f}\nNow: ${item['price']:,.0f}"
-                    send_telegram(msg)
+                # Check for critical changes
+                old_status = existing[8]
+                if b['status'] != old_status:
+                    db.upsert(b)
+                    msg = (f"🔄 <b>STATUS CHANGE</b>\n"
+                           f"🏡 {b['estate']} | Lot {b['lot']}\n"
+                           f"Was: {old_status}\n"
+                           f"Now: <b>{b['status']}</b>")
+                    send_alert(msg)
 
+import hashlib
 if __name__ == "__main__":
     run()
